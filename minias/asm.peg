@@ -1,0 +1,561 @@
+
+line  =
+    ws? s:stmt { yy->v = s; }
+  | eol { yy->v.kind = ASM_BLANK; }
+  | . { yy->v.kind = ASM_SYNTAX_ERROR; }
+
+ws = ([ \t]+ | comment)+
+comment = "/*" ( ! "\n" ! "*/" . )* "*/"   # No support for multiline comments for now as they break our line numbers.
+eolcomment = '#' (! "\n" .)+ 
+eol = ws? eolcomment? "\n"
+
+stmt =
+    '.' d:directive eol {$$ = d;}
+  | i:instr eol { $$ = i; }
+  | l:label eol {  $$ = l; } 
+
+directive =
+   "glob" 'o'? 'l' ws i:ident
+   { $$.globl = (Globl){.kind = ASM_DIR_GLOBL, .name = i.charptr }; }
+  | "ascii" <'z'?> ws s:string
+    { s.kind = *yytext ? ASM_DIR_ASCII : ASM_DIR_ASCIIZ ; $$ = s; }
+  | "data" 
+    { $$.kind = ASM_DIR_DATA; }
+  | "text"
+    { $$.kind = ASM_DIR_TEXT; }
+  | "bss"
+    { $$.kind = ASM_DIR_BSS; }
+  | "align" ws n:number 
+    { $$.balign = (Balign){.kind = ASM_DIR_BALIGN, .align = n.i64 }; }
+  | "byte" ws v:value
+    { $$.dirbyte = (Byte){.kind = ASM_DIR_BYTE, .value = v.value }; }
+  | "short" ws v:value
+    { $$.dirshort = (Short){.kind = ASM_DIR_SHORT, .value = v.value }; }
+  | "int" ws v:value
+    { $$.dirint = (Int){.kind = ASM_DIR_INT,  .value = v.value }; }
+  | "word" ws v:value
+    { $$.dirint = (Int){.kind = ASM_DIR_WORD,  .value = v.value }; }
+  | "quad" ws v:value
+    { $$.dirquad = (Quad){.kind = ASM_DIR_QUAD, .value = v.value }; }
+  | fd:fill-directive
+    { $$ = fd; }
+  | sd:section-directive
+    { $$ = sd; }
+
+fill-directive = 
+    "fill" ws r:number ws? "," ws? s:number ws? "," ws? v:number
+    { $$.fill = (Fill){ .kind=ASM_DIR_FILL, .repeat = r.i64, .size = s.i64, .value = v.i64 }; }
+  | "space" ws r:number
+    { $$.fill = (Fill){ .kind=ASM_DIR_FILL, .repeat = r.i64, .size = 1, .value = 0 }; }
+
+section-directive =
+  "section" ws? n:section-name (
+      ws? ',' ws? f:section-flags ws? ',' ws? t:section-type
+      {$$.section = (DirSection){.kind=ASM_DIR_SECTION, .name=n.charptr, .flags=f.charptr, .type=t.i64}; }
+    | ws? ',' ws? f:section-flags
+      {$$.section = (DirSection){.kind=ASM_DIR_SECTION, .name=n.charptr, .flags=f.charptr, .type=SHT_PROGBITS}; }
+    | 
+      {$$.section = (DirSection){.kind=ASM_DIR_SECTION, .name=n.charptr, .flags="", .type=SHT_PROGBITS}; }
+  )
+
+section-name = <[.a-zA-Z0-9\-]+> { $$.charptr = internstring(yytext); }
+section-flags = '"' <[awx]*> '"' { $$.charptr = internstring(yytext); }
+section-type =
+    "@nobits" { $$.i64 = SHT_NOBITS; }
+  | "@progbits" { $$.i64 = SHT_PROGBITS; }
+
+label = 
+  i:ident ':'
+  { $$.label = (Label){.kind = ASM_LABEL, .name = i.charptr}; }
+
+instr = 
+  # Ordered by instruction frequency for performance.
+  # e.g. movs are very common, so they come first.
+  # The & operator means check without consuming input.
+   i:ebreak { $$= i; }
+ | i:csrrwi { $$ = i; }
+ | i:csrrsi { $$ = i; }
+ | i:csrrci { $$ = i; }
+ | i:rdcych { $$ = i; }
+ | i:mulhsu { $$ = i; }
+ | i:rdcyc { $$ = i; }
+ | i:auipc { $$ = i; } 
+ | i:sltiu { $$ = i; }
+ | i:csrrw { $$ = i; }
+ | i:csrrs { $$ = i; }
+ | i:csrrc { $$ = i; }
+ | i:mulhu { $$ = i; } 
+ | i:csrr { $$ = i; }
+ | i:csrw { $$ = i; }
+ | i:csrs { $$ = i; }
+ | i:csrc { $$ = i; }
+ | i:sltu  { $$ = i; }
+ | i:addi  { $$ = i; }
+ | i:xori  { $$ = i; }
+ | i:andi  { $$ = i; }
+ | i:slli  { $$ = i; }
+ | i:srli  { $$ = i; }
+ | i:srai  { $$ = i; }
+ | i:slti  { $$ = i; }
+ | i:jalr  { $$ = i; }
+ | i:bltu  { $$ = i; }
+ | i:bgeu  { $$ = i; }
+ | i:bgtu  { $$ = i; }
+ | i:bleu  { $$ = i; }
+ | i:beqz  { $$ = i; }
+ | i:bnez  { $$ = i; }
+ | i:blez  { $$ = i; }
+ | i:bgez  { $$ = i; }
+ | i:bltz  { $$ = i; }
+ | i:bgtz  { $$ = i; }
+ | i:mulh  { $$ = i; }
+ | i:divu  { $$ = i; }
+ | i:remu  { $$ = i; }
+ | i:mul   { $$ = i; }
+ | i:div   { $$ = i; }
+ | i:rem   { $$ = i; }
+ | i:add   { $$ = i; }
+ | i:sub   { $$ = i; }
+ | i:xor   { $$ = i; }
+ | i:and   { $$ = i; }
+ | i:sll   { $$ = i; }
+ | i:srl   { $$ = i; }
+ | i:sra   { $$ = i; }
+ | i:slt   { $$ = i; }
+ | i:ori   { $$ = i; }
+ | i:lbu   { $$ = i; }
+ | i:lhu   { $$ = i; }
+ | i:beq   { $$ = i; }
+ | i:bne   { $$ = i; }
+ | i:blt   { $$ = i; }
+ | i:bge   { $$ = i; }
+ | i:jal   { $$ = i; }
+ | i:nop   { $$ = i; }
+ | i:ret   { $$ = i; } 
+ | i:not   { $$ = i; }
+ | i:neg   { $$ = i; }
+ | i:bgt   { $$ = i; }
+ | i:ble   { $$ = i; }
+ | i:lui   { $$ = i  }
+ | i:lb    { $$ = i; }
+ | i:lh    { $$ = i; }
+ | i:lw    { $$ = i; }
+ | i:sb    { $$ = i; }
+ | i:sh    { $$ = i; }
+ | i:sw    { $$ = i; }
+ | i:or    { $$ = i; }
+ | i:mv    { $$ = i; }
+ | i:li    { $$ = i; }
+ | i:la    { $$ = i; }
+ | i:j     { $$ = i; }
+
+nop =   "nop"   { $$ = (Parsev){ .kind=ASM_NOP   }; }
+
+ebreak =   "ebreak"   { $$ = (Parsev){ .kind=ASM_EBREAK   }; }
+
+add = "add"  (
+  ws d:r32 ws? ',' ws? s1:r32 ws? ',' ws? s2:r32  { $$ = INSTR3(0, d, s1, s2); }
+) { $$.instr.kind = ASM_ADD; }
+
+sub = "sub"  (
+  ws d:r32 ws? ',' ws? s1:r32 ws? ',' ws? s2:r32  { $$ = INSTR3(0, d, s1, s2); }
+) { $$.instr.kind = ASM_SUB; }
+
+xor = "xor"  (
+  ws d:r32 ws? ',' ws? s1:r32 ws? ',' ws? s2:r32  { $$ = INSTR3(0, d, s1, s2); }
+) { $$.instr.kind = ASM_XOR; }
+
+or = "or"  (
+  ws d:r32 ws? ',' ws? s1:r32 ws? ',' ws? s2:r32  { $$ = INSTR3(0, d, s1, s2); }
+) { $$.instr.kind = ASM_OR; }
+
+and = "and"  (
+  ws d:r32 ws? ',' ws? s1:r32 ws? ',' ws? s2:r32  { $$ = INSTR3(0, d, s1, s2); }
+) { $$.instr.kind = ASM_AND; }
+
+sll = "sll"  (
+  ws d:r32 ws? ',' ws? s1:r32 ws? ',' ws? s2:r32  { $$ = INSTR3(0, d, s1, s2); }
+) { $$.instr.kind = ASM_SLL; }
+
+srl = "srl"  (
+  ws d:r32 ws? ',' ws? s1:r32 ws? ',' ws? s2:r32  { $$ = INSTR3(0, d, s1, s2); }
+) { $$.instr.kind = ASM_SRL; }
+
+sra = "sra"  (
+  ws d:r32 ws? ',' ws? s1:r32 ws? ',' ws? s2:r32  { $$ = INSTR3(0, d, s1, s2); }
+) { $$.instr.kind = ASM_SRA; }
+
+slt = "slt"  (
+  ws d:r32 ws? ',' ws? s1:r32 ws? ',' ws? s2:r32  { $$ = INSTR3(0, d, s1, s2); }
+) { $$.instr.kind = ASM_SLT; }
+
+sltu = "sltu"  (
+  ws d:r32 ws? ',' ws? s1:r32 ws? ',' ws? s2:r32  { $$ = INSTR3(0, d, s1, s2); }
+) { $$.instr.kind = ASM_SLTU; }
+
+addi = "addi"  (
+  ws d:r32 ws? ',' ws? s1:r32 ws? ',' ws? i:imm16  { $$ = INSTR3(0, d, s1, i); }
+) { $$.instr.kind = ASM_ADDI; }
+
+xori = "xori"  (
+  ws d:r32 ws? ',' ws? s1:r32 ws? ',' ws? i:imm16  { $$ = INSTR3(0, d, s1, i); }
+) { $$.instr.kind = ASM_XORI; }
+
+ori = "ori"  (
+  ws d:r32 ws? ',' ws? s1:r32 ws? ',' ws? i:imm16  { $$ = INSTR3(0, d, s1, i); }
+) { $$.instr.kind = ASM_ORI; }
+
+andi = "andi"  (
+  ws d:r32 ws? ',' ws? s1:r32 ws? ',' ws? i:imm16  { $$ = INSTR3(0, d, s1, i); }
+) { $$.instr.kind = ASM_ANDI; }
+
+slli = "slli"  (
+  ws d:r32 ws? ',' ws? s1:r32 ws? ',' ws? i:imm16  { $$ = INSTR3(0, d, s1, i); }
+) { $$.instr.kind = ASM_SLLI; }
+
+srli = "srli"  (
+  ws d:r32 ws? ',' ws? s1:r32 ws? ',' ws? i:imm16  { $$ = INSTR3(0, d, s1, i); }
+) { $$.instr.kind = ASM_SRLI; }
+
+srai = "srai"  (
+  ws d:r32 ws? ',' ws? s1:r32 ws? ',' ws? i:imm16  { $$ = INSTR3(0, d, s1, i); }
+) { $$.instr.kind = ASM_SRAI; }
+
+slti = "slti"  (
+  ws d:r32 ws? ',' ws? s1:r32 ws? ',' ws? i:imm16  { $$ = INSTR3(0, d, s1, i); }
+) { $$.instr.kind = ASM_SLTI; }
+
+sltiu = "sltiu"  (
+  ws d:r32 ws? ',' ws? s1:r32 ws? ',' ws? i:imm16  { $$ = INSTR3(0, d, s1, i); }
+) { $$.instr.kind = ASM_SLTIU; }
+
+lb = "lb"  (
+   ws d:r32 ws? ',' ws? i:imm16 ws? '(' ws? s1:r32 ws? ')'  { $$ = INSTR3(0, d, s1, i); }
+ | ws d:r32 ws? ',' ws? i:imm { $$=INSTR2(1, d, i); }
+) { $$.instr.kind = ASM_LB; }
+
+lh = "lh"  (
+    ws d:r32 ws? ',' ws? i:imm16 ws? '(' ws? s1:r32 ws? ')'  { $$ = INSTR3(0, d, s1, i); }
+  | ws d:r32 ws? ',' ws? i:imm { $$=INSTR2(1, d, i); }
+) { $$.instr.kind = ASM_LH; }
+
+lw = "lw"  (
+    ws d:r32 ws? ',' ws? i:imm16 ws? '(' ws? s1:r32 ws? ')'  { $$ = INSTR3(0, d, s1, i); }
+  | ws d:r32 ws? ',' ws? i:imm { $$=INSTR2(1, d, i); }
+) { $$.instr.kind = ASM_LW; }
+
+lbu = "lbu"  (
+    ws d:r32 ws? ',' ws? i:imm16 ws? '(' ws? s1:r32 ws? ')'  { $$ = INSTR3(0, d, s1, i); }
+  | ws d:r32 ws? ',' ws? i:imm { $$=INSTR2(1, d, i); }
+) { $$.instr.kind = ASM_LBU; }
+
+lhu = "lhu"  (
+    ws d:r32 ws? ',' ws? i:imm16 ws? '(' ws? s1:r32 ws? ')'  { $$ = INSTR3(0, d, s1, i); }
+  | ws d:r32 ws? ',' ws? i:imm { $$=INSTR2(1, d, i); }
+) { $$.instr.kind = ASM_LHU; }
+
+sb = "sb"  (
+    ws s2:r32 ws? ',' ws? i:imm16 ws? '(' ws? s1:r32 ws? ')'  { $$ = INSTR3(0, s2, s1, i); }
+  | ws s2:r32 ws? ',' ws? i:imm ws? ',' ws? s1:r32 ws? { $$=INSTR3(1, s2, i, s1); }
+) { $$.instr.kind = ASM_SB; }
+
+sh = "sh"  (
+    ws s2:r32 ws? ',' ws? i:imm16 ws? '(' ws? s1:r32 ws? ')'  { $$ = INSTR3(0, s2, s1, i); }
+  | ws s2:r32 ws? ',' ws? i:imm ws? ',' ws? s1:r32 ws? { $$=INSTR3(1, s2, i, s1); }
+) { $$.instr.kind = ASM_SH; }
+
+
+sw = "sw"  (
+    ws s2:r32 ws? ',' ws? i:imm16 ws? '(' ws? s1:r32 ws? ')'  { $$ = INSTR3(0, s2, s1, i); }
+  | ws s2:r32 ws? ',' ws? i:imm ws? ',' ws? s1:r32 ws? { $$=INSTR3(1, s2, i, s1); }
+) { $$.instr.kind = ASM_SW; }
+
+beq = "beq"  (
+  ws s1:r32 ws? ',' ws? s2:r32 ',' ws? i:imm { $$ = INSTR3(0, s1, s2, i); }
+) { $$.instr.kind = ASM_BEQ; }
+
+beqz = "beqz"  (
+  ws s1:r32 ws? ',' ws? i:imm { $$ = INSTR3(0, s1, REG(R0), i); }
+) { $$.instr.kind = ASM_BEQ; }
+
+bne = "bne"  (
+  ws s1:r32 ws? ',' ws? s2:r32 ',' ws? i:imm { $$ = INSTR3(0, s1, s2, i); }
+) { $$.instr.kind = ASM_BNE; }
+
+bnez = "bnez"  (
+  ws s1:r32 ws? ',' ws? i:imm { $$ = INSTR3(0, s1, REG(R0), i); }
+) { $$.instr.kind = ASM_BNE; }
+
+blt = "blt"  (
+  ws s1:r32 ws? ',' ws? s2:r32 ',' ws? i:imm { $$ = INSTR3(0, s1, s2, i); }
+) { $$.instr.kind = ASM_BLT; }
+
+bltz = "bltz"  (
+  ws s1:r32 ws? ',' ws? i:imm { $$ = INSTR3(0, s1, REG(R0), i); }
+) { $$.instr.kind = ASM_BLT; }
+
+bgtz = "bgtz"  (
+  ws s1:r32 ws? ',' ws? i:imm { $$ = INSTR3(0, REG(R0), s1, i); }
+) { $$.instr.kind = ASM_BLT; }
+
+bgt = "bgt"  (
+  ws s1:r32 ws? ',' ws? s2:r32 ',' ws? i:imm { $$ = INSTR3(0, s2, s1, i); }
+) { $$.instr.kind = ASM_BLT; }
+
+
+bge = "bge"  (
+  ws s1:r32 ws? ',' ws? s2:r32 ',' ws? i:imm { $$ = INSTR3(0, s1, s2, i); }
+) { $$.instr.kind = ASM_BGE; }
+
+blez = "blez"  (
+  ws s1:r32 ws? ',' ws? s2:r32 ',' ws? i:imm { $$ = INSTR3(0, REG(R0), s1, i); }
+) { $$.instr.kind = ASM_BGE; }
+
+bgez = "bgez"  (
+  ws s1:r32 ws? ',' ws? i:imm { $$ = INSTR3(0, s1, REG(R0), i); }
+) { $$.instr.kind = ASM_BGE; }
+
+ble = "ble"  (
+  ws s1:r32 ws? ',' ws? s2:r32 ',' ws? i:imm { $$ = INSTR3(0, s2, s1, i); }
+) { $$.instr.kind = ASM_BGE; }
+
+bltu = "bltu"  (
+  ws s1:r32 ws? ',' ws? s2:r32 ',' ws? i:imm { $$ = INSTR3(0, s1, s2, i); }
+) { $$.instr.kind = ASM_BLTU; }
+
+bgtu = "bgtu"  (
+  ws s1:r32 ws? ',' ws? s2:r32 ',' ws? i:imm { $$ = INSTR3(0, s2, s1, i); }
+) { $$.instr.kind = ASM_BLTU; }
+
+bgeu = "bgeu"  (
+  ws s1:r32 ws? ',' ws? s2:r32 ',' ws? i:imm { $$ = INSTR3(0, s1, s2, i); }
+) { $$.instr.kind = ASM_BGEU; }
+
+bleu = "bleu"  (
+  ws s1:r32 ws? ',' ws? s2:r32 ',' ws? i:imm { $$ = INSTR3(0, s2, s1, i); }
+) { $$.instr.kind = ASM_BGEU; }
+
+
+jal = "jal"  (
+    ws d:r32 ws? ',' ws? i:imm { $$ = INSTR2(0, d, i); }
+  | ws i:imm { $$ = INSTR1(1, i);}
+) { $$.instr.kind = ASM_JAL; }
+
+j = "j"  (
+    ws i:imm { $$ = INSTR1(2, i);}
+) { $$.instr.kind = ASM_JAL; }
+
+li = "li"  (
+  ws d:r32 ws? ',' ws? i:imm32  { $$ = INSTR2(1, d, i); }
+) { $$.instr.kind = ASM_ADDI; }
+
+
+la = "la"  (
+  ws d:r32 ws? ',' ws? i:imm32  { $$ = INSTR2(2, d, i); }
+) { $$.instr.kind = ASM_ADDI; }
+
+jalr = "jalr" (
+  ws d:r32 ws? ',' ws? s1:r32 ',' ws? i:imm { $$ = INSTR3(0, d, s1, i); }
+)  { $$.instr.kind = ASM_JALR; }
+
+ret = "ret"  (
+{ $$ = INSTR3(0, REG(R0), REG(R1), ((Parsev) { .imm = (Imm){ .kind = ASM_IMM, .v = (Value){ .l = NULL, .c = 0 } , .nbytes = 0 } }) ); } 
+)  { $$.instr.kind = ASM_JALR; }
+
+mv = "mv"  (
+ws d:r32 ws? ',' ws? s1:r32 ws?  { $$ = INSTR3(0, d, s1, ((Parsev) { .imm = (Imm){ .kind = ASM_IMM, .v = (Value){ .l = NULL, .c = 0 } , .nbytes = 0 } }) ); } 
+)  { $$.instr.kind = ASM_ADDI; }
+
+not = "not"  (
+ws d:r32 ws? ',' ws? s1:r32 ws?  { $$ = INSTR3(0, d, s1, ((Parsev) { .imm = (Imm){ .kind = ASM_IMM, .v = (Value){ .l = NULL, .c = -1 } , .nbytes = 0 } }) ); } 
+)  { $$.instr.kind = ASM_XORI; }
+
+neg = "neg"  (
+ws d:r32 ws? ',' ws? s1:r32 ws?  { $$ = INSTR3(0, d, REG(R0), s1); } 
+)  { $$.instr.kind = ASM_SUB; }
+
+lui = "lui"  (
+  ws d:r32 ws? ',' ws? i:imm32  { $$ = INSTR2(1, d, i); }
+) { $$.instr.kind = ASM_LUI; }
+
+auipc = "auipc"  (
+  ws d:r32 ws? ',' ws? i:imm32  { $$ = INSTR2(1, d, i); }
+) { $$.instr.kind = ASM_AUIPC; }
+
+csrrw = "csrrw"  (
+  ws d:r32 ws? ',' ws? i:imm16 ws? ',' ws? s1:r32   { $$ = INSTR3(0, d, i, s1); }
+) { $$.instr.kind = ASM_CSRRW; }
+
+csrw = "csrw"  (
+  i:imm16 ws? ',' ws? s1:r32   { $$ = INSTR3(0, REG(R0), i, s1); }
+) { $$.instr.kind = ASM_CSRRW; }
+
+
+csrrs = "csrrs"  (
+  ws d:r32 ws? ',' ws? i:imm16 ws? ',' ws? s1:r32   { $$ = INSTR3(0, d, i, s1); }
+) { $$.instr.kind = ASM_CSRRS; }
+
+csrs = "csrs"  (
+  i:imm16 ws? ',' ws? s1:r32   { $$ = INSTR3(0, REG(R0), i, s1); }
+) { $$.instr.kind = ASM_CSRRS; }
+
+csrr = "csrr"  (
+  ws d:r32 ws? ',' ws? i:imm16    { $$ = INSTR3(0, d, i, REG(R0)); }
+) { $$.instr.kind = ASM_CSRRS; }
+
+rdcyc = "rdcycle"  (
+  ws d:r32 { $$ = INSTR3(0, d, ((Parsev) { .imm = (Imm){ .kind = ASM_IMM, .v = (Value){ .l = NULL, .c = 0xC00 } , .nbytes = 4 } })  , REG(R0)); }
+) { $$.instr.kind = ASM_CSRRS; }
+
+rdcych = "rdcycleh"  (
+  ws d:r32 { $$ = INSTR3(0, d, ((Parsev) { .imm = (Imm){ .kind = ASM_IMM, .v = (Value){ .l = NULL, .c = 0xC80 } , .nbytes = 4 } })  , REG(R0)); }
+) { $$.instr.kind = ASM_CSRRS; }
+
+csrrc = "csrrc"  (
+  ws d:r32 ws? ',' ws? i:imm16 ws? ',' ws? s1:r32   { $$ = INSTR3(0, d, i, s1); }
+) { $$.instr.kind = ASM_CSRRC; }
+
+csrc = "csrc"  (
+  ws i:imm16 ws? ',' ws? s1:r32   { $$ = INSTR3(0, REG(R0), i, s1); }
+) { $$.instr.kind = ASM_CSRRC; }
+
+csrrwi = "csrrwi"  (
+  ws d:r32 ws? ',' ws? i1:imm16 ws? ',' ws? i2:imm8   { $$ = INSTR3(0, d, i1, i2); }
+) { $$.instr.kind = ASM_CSRRWI; }
+
+csrrsi = "csrrsi"  (
+  ws d:r32 ws? ',' ws? i1:imm16 ws? ',' ws? i2:imm8   { $$ = INSTR3(0, d, i1, i2); }
+) { $$.instr.kind = ASM_CSRRSI; }
+
+csrrci = "csrrci"  (
+  ws d:r32 ws? ',' ws? i1:imm16 ws? ',' ws? i2:imm8   { $$ = INSTR3(0, d, i1, i2); }
+) { $$.instr.kind = ASM_CSRRCI; }
+
+mul = "mul"  (
+  ws d:r32 ws? ',' ws? s1:r32 ws? ',' ws? s2:r32  { $$ = INSTR3(0, d, s1, s2); }
+) { $$.instr.kind = ASM_MUL; }
+
+mulh = "mulh"  (
+  ws d:r32 ws? ',' ws? s1:r32 ws? ',' ws? s2:r32  { $$ = INSTR3(0, d, s1, s2); }
+) { $$.instr.kind = ASM_MULH; }
+
+mulhsu = "mulhsu"  (
+  ws d:r32 ws? ',' ws? s1:r32 ws? ',' ws? s2:r32  { $$ = INSTR3(0, d, s1, s2); }
+) { $$.instr.kind = ASM_MULHSU; }
+
+mulhu = "mulhu"  (
+  ws d:r32 ws? ',' ws? s1:r32 ws? ',' ws? s2:r32  { $$ = INSTR3(0, d, s1, s2); }
+) { $$.instr.kind = ASM_MULHU; }
+
+div = "div"  (
+  ws d:r32 ws? ',' ws? s1:r32 ws? ',' ws? s2:r32  { $$ = INSTR3(0, d, s1, s2); }
+) { $$.instr.kind = ASM_DIV; }
+
+divu = "divu"  (
+  ws d:r32 ws? ',' ws? s1:r32 ws? ',' ws? s2:r32  { $$ = INSTR3(0, d, s1, s2); }
+) { $$.instr.kind = ASM_DIVU; }
+
+rem = "rem"  (
+  ws d:r32 ws? ',' ws? s1:r32 ws? ',' ws? s2:r32  { $$ = INSTR3(0, d, s1, s2); }
+) { $$.instr.kind = ASM_REM; }
+
+remu = "remu"  (
+  ws d:r32 ws? ',' ws? s1:r32 ws? ',' ws? s2:r32  { $$ = INSTR3(0, d, s1, s2); }
+) { $$.instr.kind = ASM_REMU; }
+
+imm8 = i:imm { i.imm.nbytes = 1; $$ = i; }
+imm16 = i:imm { i.imm.nbytes = 2; $$ = i; }
+imm32 = i:imm { i.imm.nbytes = 4; $$ = i; }
+
+imm = 
+     ws? val:value
+    { $$ = (Parsev) { .imm = (Imm){ .kind = ASM_IMM, .v = val.value, .nbytes = 0} }; }
+
+
+
+r32 = (
+    "x10" { $$ = REG(R10); }
+  | "x11" { $$ = REG(R11); }
+  | "x12" { $$ = REG(R12); }
+  | "x13" { $$ = REG(R13); }
+  | "x14" { $$ = REG(R14); }
+  | "x15" { $$ = REG(R15); }
+  | "x16" { $$ = REG(R16); }
+  | "x17" { $$ = REG(R17); }
+  | "x18" { $$ = REG(R18); }
+  | "x19" { $$ = REG(R19); }
+  | "x20" { $$ = REG(R20); }
+  | "x21" { $$ = REG(R21); }
+  | "x22" { $$ = REG(R22); }
+  | "x23" { $$ = REG(R23); }
+  | "x24" { $$ = REG(R24); }
+  | "x25" { $$ = REG(R25); }
+  | "x26" { $$ = REG(R26); }
+  | "x27" { $$ = REG(R27); }
+  | "x28" { $$ = REG(R28); }
+  | "x29" { $$ = REG(R29); }
+  | "x30" { $$ = REG(R30); }
+  | "x31" { $$ = REG(R31); }
+  | "x0" { $$ = REG(R0); }
+  | "x1" { $$ = REG(R1); }
+  | "x2" { $$ = REG(R2); }
+  | "x3" { $$ = REG(R3); }
+  | "x4" { $$ = REG(R4); }
+  | "x5" { $$ = REG(R5); }
+  | "x6" { $$ = REG(R6); }
+  | "x7" { $$ = REG(R7); }
+  | "x8"  { $$ = REG(R8); }
+  | "x9"  { $$ = REG(R9); }
+)
+
+
+
+
+# We disallow newlines in our strings, it is simpler for lineno tracking.
+string = '"' <(string-escape | ( ! '\n' ! '\\' !'"' .))*> '"'
+         { $$.string = decodestring(yytext); }
+
+string-escape = '\\' (
+    '\\'
+  | '"'
+  | [nrt]
+  | 'x' [0-9A-Fa-f]+
+  | [0-7][0-7][0-7]
+)
+
+value = 
+     p:sum {$$.value  = (Value){ .l = NULL, .c = p.i64 }; } 
+  |  i:ident ws? ( 
+      '+' ws? n:number    { $$.value = (Value){ .c = n.i64 }; }
+      | &'-' n:number { $$.value = (Value){ .c = n.i64 }; }
+      | { $$.value = (Value){ .c = 0 }; }
+    ) { $$.value.l = i.charptr; }
+
+sum =
+	p1:product ws? '+' ws? p2:product  { $$.i64 = p1.i64 + p2.i64; }
+  | p1:product ws? '-' ws? p2:product  { $$.i64 = p1.i64 - p2.i64; }
+  | p:product { $$ = p; }
+
+product = 
+    t1:term ws? '*' ws? t2:term { $$.i64 = t1.i64*t2.i64; }
+  | t:term { $$=t; }
+  
+term =
+   '(' ws? s:sum ws? ')' { $$ = s; }
+  | n:number { $$ = n; }
+
+ident = 
+  <[._a-zA-Z][._a-zA-Z0-9]*>
+  { $$.charptr = internstring(yytext); } 
+
+number =
+  '-' ws? n:unsigned-number
+    { $$.i64 = -n.i64; }
+  | n:unsigned-number
+    { $$.i64 = n.i64; }
+
+unsigned-number = 
+    '0' [xX] <[0-9a-fA-F]+>
+    { $$.i64 = (int64_t)strtoull(yytext, NULL, 16); }
+  | <[0-9]+>
+    { $$.i64 = (int64_t)strtoull(yytext, NULL, 10); }
