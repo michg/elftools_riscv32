@@ -31,6 +31,8 @@ directive =
     { $$.dirbyte = (Byte){.kind = ASM_DIR_BYTE, .value = v.value }; }
   | "short" ws v:value
     { $$.dirshort = (Short){.kind = ASM_DIR_SHORT, .value = v.value }; }
+  | "half" ws v:value
+    { $$.dirshort = (Short){.kind = ASM_DIR_SHORT, .value = v.value }; }
   | "int" ws v:value
     { $$.dirint = (Int){.kind = ASM_DIR_INT,  .value = v.value }; }
   | "word" ws v:value

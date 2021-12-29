@@ -237,7 +237,7 @@ static unsigned long symval(struct outelf *oe, struct obj *obj, Elf_Sym *sym)
 		s_idx = sym->st_shndx;
 		s_off = sym->st_value;
 		sec = outelf_mapping(oe, &obj->shdr[s_idx]);
-		if ((sec = outelf_mapping(oe, &obj->shdr[s_idx])))
+		if (sec)
 			return sec->vaddr + s_off;
 	}
 	return 0;
@@ -463,7 +463,6 @@ static void build_symtab(struct outelf *oe)
 	oe->syms_faddr = faddr;
 	faddr += oe->nsyms * sizeof(oe->syms[0]);
 	oe->symstr_faddr = faddr;
-	faddr += oe->nsymstr;
 
 	oe->ehdr.e_shstrndx = str_shdr - oe->shdr;
 	oe->ehdr.e_shoff = oe->shdr_faddr;
@@ -643,7 +642,7 @@ static void outelf_link(struct outelf *oe)
 		vaddr + len;
 	outelf_bss(oe);
 	oe->bss_vaddr = vaddr;
-	len = link_bss(oe, &oe->phdr[2], faddr, vaddr, oe->bss_len);
+	link_bss(oe, &oe->phdr[2], faddr, vaddr, oe->bss_len);
 
 	oe->nph = 3;
 	outelf_reloc(oe);

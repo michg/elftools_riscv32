@@ -2,7 +2,7 @@
 # Makefile for building the assembler and linker
 #
 
-DIRS = minias neatld
+DIRS = minias neatld ar
 
 .PHONY:		all clean
 

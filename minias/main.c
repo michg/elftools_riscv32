@@ -303,38 +303,43 @@ static void assemble_itype(const Instr *instr, uint8_t funct3, uint8_t opcode) {
   uint8_t rd, rs1;
   const Imm *imm;
   uint32_t imm32u;
+  uint32_t val;
   char buf[6];
   Symbol *auipc;
   Symbol *sym;
   const char *relname;
   rd =  regbits(instr->arg1->kind);
-  if(instr->variant == 0) {    
+  if(instr->variant == 0) {   
     rs1 = regbits(instr->arg2->kind);
     imm = &instr->arg3->imm;
+    val = imm->v.c;
   } else if(instr->variant == 1) {
+    // li = lui + addi
     imm = &instr->arg2->imm;
+    val = imm->v.c;
     imm32u = imm->v.c;
     if((imm32u & 0x800) != 0) imm32u += 0x1000;
     su32((imm32u & 0xfffff000) | rd << 7 | 0x37);
     rs1 = rd;
   } else {
+    // la = auipc + addi
     imm = &instr->arg2->imm;
     rs1 = rd;
     sprintf(buf,".R%d",reloclabelno);
     relname = internstring(buf);
     auipc = getsym(relname);
-    sym = getsym(imm->v.l);
     auipc->section = cursection;
     auipc->offset = cursection->hdr.sh_size;
     if (auipc->defined)
      lfatal("%s already defined", auipc->name);
     auipc->defined = 1;
     reloclabelno++;
-    assemblereloc(imm->v.l, 0, 0, R_RISCV_PCREL_HI20);
+    assemblereloc(imm->v.l, imm->v.c, 0, R_RISCV_PCREL_HI20);
     su32(0 | rd << 7 | 0x17);
     assemblereloc(relname, 0, 0,  R_RISCV_PCREL_LO12_I);
+    val = 0;
   }
-  su32(((imm->v.c) & 0xfff) << 20 | rs1 << 15 | funct3 << 12 | rd << 7 | opcode);
+  su32((val & 0xfff) << 20 | rs1 << 15 | funct3 << 12 | rd << 7 | opcode);
 }
 
 static void assemble_itype_shift(const Instr *instr, uint8_t funct3, uint8_t funct5) {
@@ -349,6 +354,7 @@ static void assemble_itype_shift(const Instr *instr, uint8_t funct3, uint8_t fun
 static void assemble_itype_load(const Instr *instr, uint8_t funct3) {
   uint8_t rd, rs1;
   const Imm *imm;
+  uint32_t val;
   char buf[6];
   Symbol *auipc;
   Symbol *sym;
@@ -357,29 +363,32 @@ static void assemble_itype_load(const Instr *instr, uint8_t funct3) {
   if(instr->variant == 0) {   
     rs1 = regbits(instr->arg2->kind);
     imm = &instr->arg3->imm;
+    val = imm->v.c;
   } else {
+    // load symbol
     imm = &instr->arg2->imm;
     rs1 = rd;
     sprintf(buf,".R%d",reloclabelno);
     relname = internstring(buf);
     auipc = getsym(relname);
-    sym = getsym(imm->v.l);
     auipc->section = cursection;
     auipc->offset = cursection->hdr.sh_size;
     if (auipc->defined)
      lfatal("%s already defined", auipc->name);
     auipc->defined = 1;
     reloclabelno++;
-    assemblereloc(imm->v.l, 0, 0, R_RISCV_PCREL_HI20);
+    assemblereloc(imm->v.l, imm->v.c, 0, R_RISCV_PCREL_HI20);
     su32(0 | rd << 7 | 0x17);
     assemblereloc(relname, 0, 0,  R_RISCV_PCREL_LO12_I);
+    val = 0;
   }
-  su32(((imm->v.c) & 0xfff) << 20 | rs1 << 15 | funct3 << 12 | rd << 7 | 0x3);
+  su32((val & 0xfff) << 20 | rs1 << 15 | funct3 << 12 | rd << 7 | 0x3);
 }
 
 static void assemble_stype(const Instr *instr, uint8_t funct3) {
   uint8_t rs2, rs1;
   const Imm *imm;
+  uint32_t val;
   char buf[6];
   Symbol *auipc;
   Symbol *sym;
@@ -388,24 +397,26 @@ static void assemble_stype(const Instr *instr, uint8_t funct3) {
   if(instr->variant == 0) {     
     rs1 = regbits(instr->arg2->kind);
     imm = &instr->arg3->imm;
+    val = imm->v.c;
   } else {
+    // store symbol
     imm = &instr->arg2->imm;
     rs1 = regbits(instr->arg3->kind);
     sprintf(buf,".R%d",reloclabelno);
     relname = internstring(buf);
     auipc = getsym(relname);
-    sym = getsym(imm->v.l);
     auipc->section = cursection;
     auipc->offset = cursection->hdr.sh_size;
     if (auipc->defined)
      lfatal("%s already defined", auipc->name);
     auipc->defined = 1;
     reloclabelno++;
-    assemblereloc(imm->v.l, 0, 0, R_RISCV_PCREL_HI20);
+    assemblereloc(imm->v.l, imm->v.c, 0, R_RISCV_PCREL_HI20);
     su32(0 | rs1 << 7 | 0x17);
-    assemblereloc(relname, 0, 0,  R_RISCV_PCREL_LO12_S);   
+    assemblereloc(relname, 0, 0,  R_RISCV_PCREL_LO12_S);
+    val = 0;
   }
-  su32(((imm->v.c >> 5) & 0x7f) << 25 | rs2 << 20 | rs1 << 15 | funct3 << 12 | ((imm->v.c) & 0x1f) << 7 | 0x23);
+  su32(((val >> 5) & 0x7f) << 25 | rs2 << 20 | rs1 << 15 | funct3 << 12 | ((imm->v.c) & 0x1f) << 7 | 0x23);
 }
 
 static uint32_t encbsimm(int32_t simm) {
@@ -827,8 +838,9 @@ static int resolvereloc(Relocation *reloc) {
   Symbol *sym;
   uint32_t *rdata;
   int64_t value;
-  static uint32_t hi20_reloc_offset;
-  static uint32_t hi20_sym_offset;
+  static int32_t hi20_reloc_offset;
+  static int32_t hi20_reloc_add;
+  static int32_t hi20_sym_offset;
   static uint8_t hi20valid = 0;
   sym = reloc->sym;
 
@@ -846,19 +858,22 @@ static int resolvereloc(Relocation *reloc) {
     *rdata = *rdata | enchi20(sym->offset - reloc->offset + reloc->addend);
     hi20_reloc_offset = reloc->offset;
     hi20_sym_offset = sym->offset;
+    hi20_reloc_add = reloc->addend;
     hi20valid = 1;
     return 1;
   case R_RISCV_PCREL_LO12_I:
     if(sym->global) return 0;
     if(!hi20valid) return 0;
     rdata = (uint32_t *)&reloc->section->data[reloc->offset];
-    *rdata = *rdata | enci12(hi20_sym_offset - hi20_reloc_offset + reloc->addend);
+    *rdata = *rdata | enci12(hi20_sym_offset - hi20_reloc_offset + hi20_reloc_add);
+    hi20valid = 0;
     return 1;
   case R_RISCV_PCREL_LO12_S:
     if(sym->global) return 0;
     if(!hi20valid) return 0;
     rdata = (uint32_t *)&reloc->section->data[reloc->offset];
-    *rdata = *rdata | encs12(hi20_sym_offset - hi20_reloc_offset + reloc->addend);
+    *rdata = *rdata | encs12(hi20_sym_offset - hi20_reloc_offset +  hi20_reloc_add);
+    hi20valid = 0;
     return 1;
   case R_RISCV_JAL:
     rdata = (uint32_t *)&reloc->section->data[reloc->offset];
