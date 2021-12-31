@@ -21,13 +21,13 @@ FatFs testcase:
 > cd tests/fatfs
 >
 > Build the firmware:     
-> ./mkfw.sh  
+> make  
 >
 > Build the verilator simulation:
 > cd verilator
-> ./buildsim.sh
+> make
 >
 > Execute the simulation:
 > cd ../result
-> ./vsystem
+> ./Vsystem
 
