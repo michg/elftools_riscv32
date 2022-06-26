@@ -53,18 +53,18 @@ static int e_flags;				/* elf ehdr flags */
 #define ALIGN(x, a)	(((x) + (a) - 1) & ~((a) - 1))
 
 /* simplified elf struct and macro names */
-#  define Elf_Phdr	Elf32_Phdr
-#  define Elf_Ehdr	Elf32_Ehdr
-#  define Elf_Shdr	Elf32_Shdr
-#  define Elf_Sym	Elf32_Sym
-#  define Elf_Rela	Elf32_Rela
-#  define SHT_REL_	SHT_RELA
-#  define REL_ADDEND(r)	((r)->r_addend)
-#  define ELF_ST_INFO	ELF32_ST_INFO
-#  define ELF_ST_BIND	ELF32_ST_BIND
-#  define ELF_R_SYM	ELF32_R_SYM
-#  define ELF_R_TYPE	ELF32_R_TYPE
-#  define ELF_ST_TYPE	ELF32_ST_TYPE
+#define Elf_Phdr	Elf32_Phdr
+#define Elf_Ehdr	Elf32_Ehdr
+#define Elf_Shdr	Elf32_Shdr
+#define Elf_Sym	Elf32_Sym
+#define Elf_Rela	Elf32_Rela
+#define SHT_REL_	SHT_RELA
+#define REL_ADDEND(r)	((r)->r_addend)
+#define ELF_ST_INFO	ELF32_ST_INFO
+#define ELF_ST_BIND	ELF32_ST_BIND
+#define ELF_R_SYM	ELF32_R_SYM
+#define ELF_R_TYPE	ELF32_R_TYPE
+#define ELF_ST_TYPE	ELF32_ST_TYPE
 
 
 struct obj {
@@ -159,7 +159,7 @@ static void outelf_init(struct outelf *oe)
 	oe->ehdr.e_ident[1] = 'E';
 	oe->ehdr.e_ident[2] = 'L';
 	oe->ehdr.e_ident[3] = 'F';
-	oe->ehdr.e_ident[4] = sizeof(long) == 8 ? ELFCLASS64 : ELFCLASS32;
+	oe->ehdr.e_ident[4] = ELFCLASS32;
 	oe->ehdr.e_ident[5] = ELFDATA2LSB;
 	oe->ehdr.e_ident[6] = EV_CURRENT;
 	oe->ehdr.e_type = ET_EXEC;
@@ -577,11 +577,11 @@ static int link_ds(struct outelf *oe, Elf_Phdr *phdr, unsigned long faddr,
 		struct secmap *sec = &oe->secs[i];
 		if (!SEC_DATA(sec->o_shdr))
 			continue;
+		len = ALIGN(len, 4);
 		sec->vaddr = vaddr + len;
 		sec->faddr = faddr + len;
 		len += sec->o_shdr->sh_size;
-	}
-	len = ALIGN(len, 4);
+	}	
 	phdr->p_type = PT_LOAD;
 	phdr->p_flags = PF_R | PF_W | PF_X;
 	phdr->p_align = PAGE_SIZE;
@@ -624,7 +624,7 @@ static void outelf_link(struct outelf *oe)
 	int len = 0;
 	if(!noelf) len = ALIGN(sizeof(oe->ehdr) + MAXPHDRS * sizeof(oe->phdr[0]), secalign);
 	faddr = len & ~PAGE_MASK;
-	vaddr = sec_vaddr[I_CS];
+	vaddr = sec_vaddr[I_CS] - (len & PAGE_MASK);
 	laddr = sec_laddr[I_CS];
 	len = link_cs(oe, &oe->phdr[0], faddr, vaddr, laddr, len & PAGE_MASK);
 

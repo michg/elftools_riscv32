@@ -351,13 +351,14 @@ static void assemble_itype_shift(const Instr *instr, uint8_t funct3, uint8_t fun
   su32((funct5 & 0x1f) << 27 | ((shamt->v.c) & 0x1f) << 20 | rs1 << 15 | funct3 << 12 | rd << 7 | 0x13);
 }
 
-static void assemble_itype_load(const Instr *instr, uint8_t funct3) {
-  uint8_t rd, rs1;
+static void assemble_itype_load(const Instr *instr, uint8_t funct3, bool fval) {
+  uint8_t rd, rda, rs1;
   const Imm *imm;
   uint32_t val;
   char buf[6];
   Symbol *auipc;
   Symbol *sym;
+  uint8_t opc;
   const char *relname;
   rd =  regbits(instr->arg1->kind);
   if(instr->variant == 0) {   
@@ -367,7 +368,8 @@ static void assemble_itype_load(const Instr *instr, uint8_t funct3) {
   } else {
     // load symbol
     imm = &instr->arg2->imm;
-    rs1 = rd;
+    if(!fval) rs1 = rd; 
+        else rs1 = regbits(instr->arg3->kind);
     sprintf(buf,".R%d",reloclabelno);
     relname = internstring(buf);
     auipc = getsym(relname);
@@ -378,15 +380,18 @@ static void assemble_itype_load(const Instr *instr, uint8_t funct3) {
     auipc->defined = 1;
     reloclabelno++;
     assemblereloc(imm->v.l, imm->v.c, 0, R_RISCV_PCREL_HI20);
-    su32(0 | rd << 7 | 0x17);
+    if(!fval) rda = rd;
+        else rda = rs1;
+    su32(0 | rda << 7 | 0x17);
     assemblereloc(relname, 0, 0,  R_RISCV_PCREL_LO12_I);
     val = 0;
   }
-  su32((val & 0xfff) << 20 | rs1 << 15 | funct3 << 12 | rd << 7 | 0x3);
+  if(!fval) opc = 3; else opc = 7;
+  su32((val & 0xfff) << 20 | rs1 << 15 | funct3 << 12 | rd << 7 | opc);
 }
 
-static void assemble_stype(const Instr *instr, uint8_t funct3) {
-  uint8_t rs2, rs1;
+static void assemble_stype(const Instr *instr, uint8_t funct3, bool fval) {
+  uint8_t rs2, rs1, opc;
   const Imm *imm;
   uint32_t val;
   char buf[6];
@@ -416,7 +421,8 @@ static void assemble_stype(const Instr *instr, uint8_t funct3) {
     assemblereloc(relname, 0, 0,  R_RISCV_PCREL_LO12_S);
     val = 0;
   }
-  su32(((val >> 5) & 0x7f) << 25 | rs2 << 20 | rs1 << 15 | funct3 << 12 | ((imm->v.c) & 0x1f) << 7 | 0x23);
+  if(!fval) opc = 0x23; else opc = 0x27;
+  su32(((val >> 5) & 0x7f) << 25 | rs2 << 20 | rs1 << 15 | funct3 << 12 | ((imm->v.c) & 0x1f) << 7 | opc);
 }
 
 static uint32_t encbsimm(int32_t simm) {
@@ -570,6 +576,12 @@ static void assemble(void) {
       sbn(v->asciiz.data, v->asciiz.len);
       sb(0x00);
       break;
+    case ASM_DIR_FILE:
+      break;
+    case ASM_DIR_TYPE:
+      break;
+    case ASM_DIR_SIZE:
+      break;
     case ASM_DIR_BALIGN: {
       int64_t i, rem, amnt;
       amnt = 0;
@@ -621,6 +633,60 @@ static void assemble(void) {
       break;
     case ASM_ADD:
       assemble_rtype(&v->instr, 0x0, 0x0, 0x33);
+      break;
+    case ASM_FADD:
+      assemble_rtype(&v->instr, 0x0, 0x7, 0x53);
+      break;
+    case ASM_FSUB:
+      assemble_rtype(&v->instr, 0x4, 0x7, 0x53);
+      break;
+    case ASM_FMUL:
+      assemble_rtype(&v->instr, 0x8, 0x7, 0x53);
+      break;
+    case ASM_FDIV:
+      assemble_rtype(&v->instr, 0xC, 0x7, 0x53);
+      break;
+    case ASM_FMIN:
+      assemble_rtype(&v->instr, 0x14, 0x0, 0x53);
+      break;
+    case ASM_FMAX:
+      assemble_rtype(&v->instr, 0x14, 0x1, 0x53);
+      break;
+    case ASM_FSGNJ:
+      assemble_rtype(&v->instr, 0x10, 0x0, 0x53);
+      break;
+    case ASM_FSGNJN:
+      assemble_rtype(&v->instr, 0x10, 0x1, 0x53);
+      break;
+    case ASM_FSGNJX:
+      assemble_rtype(&v->instr, 0x10, 0x2, 0x53);
+      break;
+    case ASM_FSQRT:
+      assemble_rtype(&v->instr, 0x2C, 0x7, 0x53);
+      break;
+    case ASM_FEQ:
+      assemble_rtype(&v->instr, 0x50, 0x2, 0x53);
+      break;
+    case ASM_FLT:
+      assemble_rtype(&v->instr, 0x50, 0x1, 0x53);
+      break;
+    case ASM_FLE:
+      assemble_rtype(&v->instr, 0x50, 0x0, 0x53);
+      break;
+    case ASM_FCLASS:
+      assemble_rtype(&v->instr, 0x70, 0x1, 0x53);
+      break;
+    case ASM_FMVXS:
+      assemble_rtype(&v->instr, 0x70, 0x0, 0x53);
+      break;
+    case ASM_FMVSX:
+      assemble_rtype(&v->instr, 0x78, 0x0, 0x53);
+      break;
+    case ASM_FCVTWS:
+      assemble_rtype(&v->instr, 0x60, 0x7, 0x53);
+      break;
+    case ASM_FCVTSW:
+      assemble_rtype(&v->instr, 0x68, 0x7, 0x53);
       break;
     case ASM_SUB:
       assemble_rtype(&v->instr, 0x20, 0x0, 0x33);
@@ -677,28 +743,34 @@ static void assemble(void) {
       assemble_itype_shift(&v->instr, 0x5, 0x8);
       break;
     case ASM_LB:
-      assemble_itype_load(&v->instr, 0x0);
+      assemble_itype_load(&v->instr, 0x0, false);
       break;
     case ASM_LH:
-      assemble_itype_load(&v->instr, 0x1);
+      assemble_itype_load(&v->instr, 0x1, false);
       break;
     case ASM_LW:
-      assemble_itype_load(&v->instr, 0x2);
+      assemble_itype_load(&v->instr, 0x2, false);
+      break;
+    case ASM_FLW:
+      assemble_itype_load(&v->instr, 0x2, true);
       break;
     case ASM_LBU:
-      assemble_itype_load(&v->instr, 0x4);
+      assemble_itype_load(&v->instr, 0x4, false);
       break;
     case ASM_LHU:
-      assemble_itype_load(&v->instr, 0x5);
+      assemble_itype_load(&v->instr, 0x5, false);
       break;
     case ASM_SB:
-      assemble_stype(&v->instr, 0x0);
+      assemble_stype(&v->instr, 0x0, false);
       break;  
     case ASM_SH:
-      assemble_stype(&v->instr, 0x1);
+      assemble_stype(&v->instr, 0x1, false);
       break;
     case ASM_SW:
-      assemble_stype(&v->instr, 0x2);
+      assemble_stype(&v->instr, 0x2, false);
+      break;
+    case ASM_FSW:
+      assemble_stype(&v->instr, 0x2, true);
       break;
     case ASM_BEQ:
       assemble_sbtype(&v->instr, 0x0);

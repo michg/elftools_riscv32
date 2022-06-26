@@ -1,4 +1,6 @@
 .text
 .globl _start
 _start:
-csrrwi x2, 0xabc, 17
+flw f3, x, x31
+x:
+
