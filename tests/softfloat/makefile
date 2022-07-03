@@ -30,7 +30,7 @@ $(RESDIR)/%.o:%.s
 	$(AS) -o $@ $<
 
 $(BIN):$(OBJS)
-	$(LD) -s -e -p -mc=0 -o $@ $^ $(RESDIR)/libmath.a $(RESDIR)/softfloat.a
+	$(LD) -ns -ne -p -mc=0 -o $@ $^ $(RESDIR)/libmath.a $(RESDIR)/softfloat.a
 	python3 mkhex.py $(RESDIR)/firmware
 	 
 clean:

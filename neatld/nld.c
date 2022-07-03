@@ -121,6 +121,7 @@ struct outelf {
 
 static int nosyms = 0;
 static int noelf = 0;
+static int map = 0;
 
 static Elf_Sym *obj_find(struct obj *obj, char *name)
 {
@@ -268,7 +269,7 @@ static int arch_rel(int r)
 		return REL_X86 | r;
 	if (e_machine == EM_RISCV)
 		return REL_RISCV | r;
-	printf("Machine not matched!\r\n");
+	printf("Machine not matched!\n");
 	return 0;
 }
 
@@ -358,23 +359,23 @@ static void outelf_reloc_sec(struct outelf *oe, int o_idx, int s_idx)
 					((*dst + ((val - addr) >> 2)) & 0x00ffffff);
 			break;
 		case REL_RISCV | R_RISCV_JAL:
-		    addr = outelf_mapping(oe, other_shdr)->vaddr +
+			addr = outelf_mapping(oe, other_shdr)->vaddr +
 				rel->r_offset;
-            *dst = *dst | encj(val - addr);
-            break;
-        case REL_RISCV | R_RISCV_PCREL_HI20:
-             addr = outelf_mapping(oe, other_shdr)->vaddr +
+			*dst = *dst | encj(val - addr);
+			break;
+		case REL_RISCV | R_RISCV_PCREL_HI20:
+			 addr = outelf_mapping(oe, other_shdr)->vaddr +
 				rel->r_offset;
-            *dst = *dst | enchi20(val - addr);
-            lastval = val;
-            lastaddr = addr;
-            break;
-        case REL_RISCV | R_RISCV_PCREL_LO12_I:
-            *dst = *dst | enci12(lastval - lastaddr);
-            break;
-        case REL_RISCV | R_RISCV_PCREL_LO12_S:
-            *dst = *dst | encs12(lastval - lastaddr);
-            break;
+			*dst = *dst | enchi20(val - addr);
+			lastval = val;
+			lastaddr = addr;
+			break;
+		case REL_RISCV | R_RISCV_PCREL_LO12_I:
+			*dst = *dst | enci12(lastval - lastaddr);
+			break;
+		case REL_RISCV | R_RISCV_PCREL_LO12_S:
+			*dst = *dst | encs12(lastval - lastaddr);
+			break;
 		default:
 			die("neatld: unknown relocation type!");
 		}
@@ -415,7 +416,7 @@ static void outelf_bss(struct outelf *oe)
 
 #define SEC_CODE(s)	((s)->sh_flags & SHF_EXECINSTR)
 #define SEC_BSS(s)	((s)->sh_type == SHT_NOBITS)
-#define SEC_DATA(s)	(!SEC_CODE(s) && !SEC_BSS(s))
+#define SEC_DATA(s)	((s)->sh_flags && !SEC_CODE(s) && !SEC_BSS(s))
 
 static char *putstr(char *d, char *s)
 {
@@ -487,7 +488,7 @@ static void outelf_write(struct outelf *oe, int fd)
 	int i;
 	oe->ehdr.e_entry = outelf_addr(oe, entry) -
 				sec_vaddr[I_CS] + sec_laddr[I_CS];
-	if (!nosyms)
+	if (!nosyms || map)
 		build_symtab(oe);
 	oe->ehdr.e_phnum = oe->nph;
 	oe->ehdr.e_phoff = sizeof(oe->ehdr);
@@ -808,13 +809,24 @@ static char *obj_add(struct outelf *oe, char *path)
 	return buf;
 }
 
+static void writemap(struct outelf *oe, FILE *f) {
+	int i;
+	Elf_Sym *syms = oe->syms;
+	char *symstr = oe->symstr;
+	for (i = 0; i < oe->nsyms; i++) {
+		if(syms[i].st_shndx != SHN_UNDEF) fprintf(f, "%s = 0x%08x\n", symstr + syms[i].st_name, syms[i].st_value);    
+	} 
+}
+
 int main(int argc, char **argv)
 {
 	char out[PATHLEN] = "a.out";
+	char mapfile[PATHLEN] = "a.map";
 	struct outelf oe;
 	char *mem[MAXFILES];
 	int nmem = 0;
 	int fd;
+	FILE *fm;
 	int i = 0;
 	if (argc < 2)
 		die("neatld: no object given!");
@@ -844,10 +856,22 @@ int main(int argc, char **argv)
 			nosyms = 1;
 			continue;
 		}
-		if (argv[i][1] == 'e') {
-			noelf = 1;
+		if (argv[i][1] == 't') {
+			strcpy(mapfile, argv[i][2] ? argv[i] + 2 : argv[++i]);
+			map = 1;
 			continue;
 		}
+		if (argv[i][1] == 'n') {
+			if (argv[i][2] == 's') {
+				 nosyms = 1;
+				 continue;
+			}
+			if (argv[i][2] == 'e') {
+				noelf = 1;
+				continue;
+			}
+		   
+		} 
 		if (argv[i][1] == 'g')
 			continue;
 		if (argv[i][1] == 'm') {
@@ -875,6 +899,11 @@ int main(int argc, char **argv)
 		die("neatld: failed to create the output!");
 	outelf_write(&oe, fd);
 	close(fd);
+	if(map) {
+	   fm = fopen(mapfile, "w");
+	   writemap(&oe, fm);
+	   fclose(fm);
+	}
 	for (i = 0; i < nmem; i++)
 		free(mem[i]);
 	return 0;

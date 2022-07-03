@@ -29,7 +29,7 @@ $(LIB):$(LOBJ)
 	$(AR) -rcs $@ $^
 
 $(BIN):$(OBJ) $(LIB)
-	$(LD) -s -e -p -mc=0 -o $@ $(OBJ) $(LIB)
+	$(LD) -ns -ne -p -mc=0 -o $@ $(OBJ) $(LIB)
 	python3 mkhex.py $(RESDIR)/firmware
 	 
 clean:
