@@ -104,6 +104,7 @@ struct outelf {
 	/* bss section */
 	struct bss_sym bss_syms[MAXSYMS];
 	int nbss_syms;
+	unsigned long ds_vaddr;
 	unsigned long bss_vaddr;
 	int bss_len;
 
@@ -635,6 +636,7 @@ static void outelf_link(struct outelf *oe)
 		vaddr + len;
 	laddr = sec_set[I_DS] ? sec_laddr[I_DS] | (faddr & PAGE_MASK) :
 		laddr + len;
+	oe->ds_vaddr = vaddr;
 	len = link_ds(oe, &oe->phdr[1], faddr, vaddr, laddr);
 
 	len = ALIGN(faddr + len, secalign) - faddr;
@@ -813,6 +815,9 @@ static void writemap(struct outelf *oe, FILE *f) {
 	int i;
 	Elf_Sym *syms = oe->syms;
 	char *symstr = oe->symstr;
+	fprintf(f, "code segement = 0x%08lx\n", sec_vaddr[I_CS]);
+	fprintf(f, "data segment = 0x%08lx\n", oe->ds_vaddr);
+	fprintf(f, "bss segment = 0x%08lx\n", oe->bss_vaddr);
 	for (i = 0; i < oe->nsyms; i++) {
 		if(syms[i].st_shndx != SHN_UNDEF) fprintf(f, "%s = 0x%08x\n", symstr + syms[i].st_name, syms[i].st_value);    
 	} 
