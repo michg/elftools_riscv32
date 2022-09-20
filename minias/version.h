@@ -1,0 +1,1 @@
+#define MINIPEG_VERSION "2022.09.20"
