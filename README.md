@@ -2,7 +2,6 @@
 The assembler is based on [minias](https://github.com/andrewchambers/minias), the linker on  [neatld](https://github.com/aligrudi/neatld).
 
 ##### Prequisites:
-* for minias  [peg/leg](https://www.piumarta.com/software/peg/) installation is needed
 * for testcase fatfs [verilator](https://www.veripool.org/wiki/verilator) is necessary  
 
 ##### Building minias and nld:      
