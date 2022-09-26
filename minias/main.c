@@ -877,8 +877,11 @@ static void addtosymtab(Symbol *sym) {
 }
 
 static void fillsymtab(void) {
-  Symbol *sym;
+  Symbol *sym, *symb;
+  Elf32_Sym *elfsym;
   size_t i;
+  int l;
+  struct hashtablekey htk;
 
   // Local symbols
   for (i = 0; i < symbols->cap; i++) {
@@ -902,6 +905,14 @@ static void fillsymtab(void) {
 
     if (sym->defined && !sym->global)
       continue;
+
+    l = strlen(sym->name);
+    if(l>3 && (strcmp(&sym->name[l-4], "_end") == 0)) {
+        htabkey(&htk, sym->name, l-4);
+        symb = (Symbol*)htabget(symbols, &htk);
+        elfsym = (Elf32_Sym *) (symtab->data + symb->idx*symtab->hdr.sh_entsize);
+        elfsym->st_size =  sym->offset - symb->offset;
+    }
     addtosymtab(sym);
   }
 }
