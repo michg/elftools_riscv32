@@ -823,6 +823,9 @@ static void writemap(struct outelf *oe, FILE *f) {
 	} 
 }
 
+#include "bss_start.h"
+#include "bss_fin.h"
+
 int main(int argc, char **argv)
 {
 	char out[PATHLEN] = "a.out";
@@ -836,7 +839,8 @@ int main(int argc, char **argv)
 	if (argc < 2)
 		die("neatld: no object given!");
 	outelf_init(&oe);
-
+	outelf_add(&oe, bss_start);
+	mem[nmem++] = bss_start;
 	while (++i < argc) {
 		if (argv[i][0] != '-') {
 			mem[nmem++] = obj_add(&oe, argv[i]);
@@ -898,6 +902,8 @@ int main(int argc, char **argv)
 			return 1;
 		}
 	}
+	outelf_add(&oe, bss_fin);
+	mem[nmem++] = bss_fin;
 	outelf_link(&oe);
 	fd = open(out, O_WRONLY | O_TRUNC | O_CREAT | O_BINARY, 0700);
 	if (fd < 0)
@@ -909,7 +915,7 @@ int main(int argc, char **argv)
 	   writemap(&oe, fm);
 	   fclose(fm);
 	}
-	for (i = 0; i < nmem; i++)
+	for (i = 1; i < nmem-1; i++)
 		free(mem[i]);
 	return 0;
 }
