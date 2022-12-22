@@ -1,33 +1,60 @@
 #include "minias.h"
 const char *internstring(const char *s);
 /* Parsed assembly */
-static AsmLine *allasm = NULL;
+static AsmLine *allasm;
 
 /* Symbol table. */
-static struct hashtable *symbols = NULL;
+static struct hashtable *symbols;
 
 /* Array of all relocations before adding to the rel section. */
-static Relocation *relocs = NULL;
-static size_t nrelocs = 0;
-static size_t reloccap = 0;
+static Relocation *relocs;
+static size_t nrelocs;
+static size_t reloccap;
 
 #define MAXSECTIONS 32
 static Section sections[MAXSECTIONS];
-static size_t nsections = 1; // first is reserved.
+static size_t nsections; // first is reserved.
 
-static Section *cursection = NULL;
-static Section *shstrtab = NULL;
-static Section *strtab = NULL;
-static Section *symtab = NULL;
-static Section *bss = NULL;
-static Section *text = NULL;
-static Section *data = NULL;
-static Section *textrel = NULL;
-static Section *datarel = NULL;
+static Section *cursection;
+static Section *shstrtab;
+static Section *strtab;
+static Section *symtab;
+static Section *bss;
+static Section *text;
+static Section *data;
+static Section *textrel;
+static Section *datarel;
 
 static char *infilename = "<stdin>";
-static size_t curlineno = 0;
-static size_t reloclabelno = 0;
+static size_t curlineno;
+static size_t reloclabelno;
+
+#define MAXFIXRELOCS 100
+int fixrelarr[MAXFIXRELOCS];
+int fixrelno;
+int curfixrelno;
+
+static void resglobs(){
+    allasm = NULL;
+    symbols = NULL;
+    relocs = NULL;
+    nrelocs = 0;
+    reloccap = 0;
+    nsections = 1;
+    cursection = NULL;
+    shstrtab = NULL;
+    strtab = NULL;
+    symtab = NULL;
+    bss = NULL;
+    text = NULL;
+    data = NULL;
+    textrel = NULL;
+    datarel = NULL;
+    curlineno = 0;
+    reloclabelno = 0;
+    curfixrelno = 0;
+    memset(&sections, 0 , sizeof(sections));
+}
 
 static void lfatal(const char *fmt, ...) {
   va_list ap;
@@ -254,11 +281,14 @@ static void assemblevbytes(VarBytes bytes) {
 
 
 /* Assemble a symbolic value. */
-static void assemblereloc(const char *l, int64_t c, int nbytes, int type) {
+static int assemblereloc(const char *l, int64_t c, int nbytes, int type) {
   Relocation *reloc;
   Symbol *sym;
-  //if(l == NULL) fprintf(stderr,"no link!\r\n");
   if (l != NULL) {
+    if(fixrelno && nrelocs == fixrelarr[curfixrelno]) {
+      curfixrelno += 1;
+      return 1;
+    }
     reloc = newreloc();
     sym = getsym(l);
     reloc->type = type;
@@ -269,6 +299,7 @@ static void assemblereloc(const char *l, int64_t c, int nbytes, int type) {
     c = 0;
   }
   assembleconstant(c, nbytes);
+  return 0;
 }
 
 static void addsymbol(const char* name) {
@@ -422,10 +453,17 @@ static void assemble_stype(const Instr *instr, uint8_t funct3, bool fval) {
     val = 0;
   }
   if(!fval) opc = 0x23; else opc = 0x27;
-  su32(((val >> 5) & 0x7f) << 25 | rs2 << 20 | rs1 << 15 | funct3 << 12 | ((imm->v.c) & 0x1f) << 7 | opc);
+  su32(((val >> 5) & 0x7f) << 25 | rs2 << 20 | rs1 << 15 | funct3 << 12 | (val & 0x1f) << 7 | opc);
+}
+
+int insrange(int bits, int val) {
+  int msb = 1<<(bits-1);
+  int ll = -msb;
+  return((val<=(msb-1) && val>=ll) ? 1 : 0);
 }
 
 static uint32_t encbsimm(int32_t simm) {
+   if(!insrange(13, simm)) fprintf(stderr,"branch relocation value invalid:%d!\r\n", simm);
    return ((simm >> 12) & 1) << 31 | ((simm >> 5) & 0x3f) << 25 | ((simm >> 1) & 0xf) << 8 | ((simm >> 11) & 1) << 7;
 }
 
@@ -452,18 +490,7 @@ static uint32_t enci12(int32_t simm) {
    return val;
 }
 
-static void assemble_sbtype(const Instr *instr, uint8_t funct3) {
-  uint8_t rs2, rs1;
-  const Imm *imm; 
-  uint32_t simm;
-  rs1 =  regbits(instr->arg1->kind);
-  rs2 = regbits(instr->arg2->kind);
-  imm = &instr->arg3->imm;
-  simm = encbsimm(imm->v.c) | rs2 << 20 |  rs1 << 15 | (funct3 & 0x7) << 12  | 0x63;
-  assemblereloc(imm->v.l, 0, 0, R_RISCV_BRANCH);
-  su32(simm);
-  
-}
+
 
 static uint32_t encj(int32_t simm) {
    uint32_t val;
@@ -488,6 +515,25 @@ static void assemble_jtype(const Instr *instr) {
   simm = encj(imm->v.c) | rd << 7  | 0x6f;
   assemblereloc(imm->v.l, 0, 0, R_RISCV_JAL);
   su32(simm);  
+}
+
+static void assemble_sbtype(const Instr *instr, uint8_t funct3) {
+  uint8_t rs2, rs1;
+  const Imm *imm;
+  Instr jmpinstr;
+  uint32_t simm;
+  rs1 =  regbits(instr->arg1->kind);
+  rs2 = regbits(instr->arg2->kind);
+  imm = &instr->arg3->imm;
+  simm = encbsimm(imm->v.c) | rs2 << 20 |  rs1 << 15 | (funct3 & 0x7) << 12  | 0x63;
+  if(assemblereloc(imm->v.l, 0, 0, R_RISCV_BRANCH)) {
+    simm = encbsimm(8) | rs2 << 20 |  rs1 << 15 | ((funct3 & 0x7) ^ 1) << 12  | 0x63;
+    su32(simm);
+    jmpinstr = *instr;
+    jmpinstr.variant = 2;
+    jmpinstr.arg1 = (Parsev *)imm;
+    assemble_jtype(&jmpinstr);
+  } else su32(simm);
 }
 
 static void assemble_csrtype(const Instr *instr, uint8_t opcode) {
@@ -611,19 +657,19 @@ static void assemble(void) {
       break;
     }
     case ASM_DIR_BYTE:
-      assemblereloc(v->dirbyte.value.l, v->dirbyte.value.c, 1, R_X86_64_32);
+      assemblereloc(v->dirbyte.value.l, v->dirbyte.value.c, 1, R_RISCV_32);
       break;
     case ASM_DIR_SHORT:
-      assemblereloc(v->dirshort.value.l, v->dirshort.value.c, 2, R_X86_64_32);
+      assemblereloc(v->dirshort.value.l, v->dirshort.value.c, 2, R_RISCV_32);
       break;
     case ASM_DIR_INT:
-      assemblereloc(v->dirint.value.l, v->dirint.value.c, 4, R_X86_64_32);
+      assemblereloc(v->dirint.value.l, v->dirint.value.c, 4, R_RISCV_32);
       break;
     case ASM_DIR_WORD:
       assemblereloc(v->dirint.value.l, v->dirint.value.c, 4, R_RISCV_32);
       break;
     case ASM_DIR_QUAD:
-      assemblereloc(v->dirquad.value.l, v->dirquad.value.c, 8, R_X86_64_64);
+      assemblereloc(v->dirquad.value.l, v->dirquad.value.c, 8, R_RISCV_32);
       break;
     case ASM_LABEL:
       addsymbol(v->label.name);
@@ -897,15 +943,21 @@ static void fillsymtab(void) {
 
   // Set start of global symbols.
   symtab->hdr.sh_info = symtab->hdr.sh_size / symtab->hdr.sh_entsize;
+  for (i = 0; i < symbols->cap; i++) {
+    if (!symbols->keys[i].str)
+      continue;
+    sym = symbols->vals[i];
+    if (sym->defined && !sym->global)
+      continue;
+    addtosymtab(sym);
+  }
 
   for (i = 0; i < symbols->cap; i++) {
     if (!symbols->keys[i].str)
       continue;
     sym = symbols->vals[i];
-
     if (sym->defined && !sym->global)
       continue;
-
     l = strlen(sym->name);
     if(l>3 && (strcmp(&sym->name[l-4], "_end") == 0)) {
         htabkey(&htk, sym->name, l-4);
@@ -913,7 +965,6 @@ static void fillsymtab(void) {
         elfsym = (Elf32_Sym *) (symtab->data + symb->idx*symtab->hdr.sh_entsize);
         elfsym->st_size =  sym->offset - symb->offset;
     }
-    addtosymtab(sym);
   }
 }
 
@@ -927,7 +978,7 @@ static int resolvereloc(Relocation *reloc) {
   static uint8_t hi20valid = 0;
   sym = reloc->sym;
 
-  if (sym->section != reloc->section)
+  if (sym->section != reloc->section || reloc->section == data)
     return 0;
 
   switch (reloc->type) {
@@ -1018,6 +1069,25 @@ static void handlerelocs(void) {
     appendreloc(reloc);
   }
 }
+
+
+
+static int checkrelocs(void) {
+  Relocation *reloc;
+  Symbol *sym;
+  int i;
+  fixrelno = 0;
+  for (i = 0; i < nrelocs; i++) {
+    reloc = &relocs[i];
+    sym = reloc->sym;
+    if(reloc->type == R_RISCV_BRANCH) {
+        if(!insrange(13, sym->offset - reloc->offset + reloc->addend))
+            fixrelarr[fixrelno++] = i;
+    }
+  }
+  return fixrelno ? 1 : 0;
+}
+
 
 static void out(const void *buf, size_t n) {
   fwrite(buf, 1, n, stdout);
@@ -1110,14 +1180,18 @@ static void parseargs(int argc, char *argv[]) {
 }
 
 int main(int argc, char *argv[]) {
-  symbols = mkhtab(256);
-  reloclabelno = 0; 
-  parseargs(argc, argv);
-  allasm = parseasm();
-  initsections();
-  assemble();
-  fillsymtab();
-  handlerelocs();
-  outelf();
-  return 0;
+    fixrelno = 0;
+start:
+    resglobs();
+    fixrelarr[fixrelno]=-1;
+    symbols = mkhtab(256);
+    parseargs(argc, argv);
+    allasm = parseasm();
+    initsections();
+    assemble();
+    if(checkrelocs()) goto start;
+    fillsymtab();
+    handlerelocs();
+    outelf();
+    return 0;
 }
