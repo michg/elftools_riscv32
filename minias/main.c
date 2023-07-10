@@ -584,8 +584,8 @@ static void assemble(void) {
     case ASM_DIR_SECTION: {
       const char *fp;
       Section *s;
-
-      s = getsection(v->section.name);
+      if (strcmp(v->section.name, ".rodata") == 0) s = data;
+      else s = getsection(v->section.name);
       s->hdr.sh_type = v->section.type;
       fp = v->section.flags;
       while (fp && *fp) {
