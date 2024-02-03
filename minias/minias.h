@@ -13,7 +13,7 @@
 
 #define ELF_RELOC(name, value) name = value, 
 enum {
-  #include "riscv.def" 
+  #include "RISCV.def"
 };
 
 typedef struct {

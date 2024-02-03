@@ -26,7 +26,7 @@
 
 #define ELF_RELOC(name, value) name = value, 
 enum {
-  #include "riscv.def" 
+  #include "RISCV.def"
 }; 
 
 #define I_CS		0
