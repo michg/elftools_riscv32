@@ -33,6 +33,7 @@ static size_t reloclabelno;
 int fixrelarr[MAXFIXRELOCS];
 int fixrelno;
 int curfixrelno;
+int is64 = 0;
 
 static void resglobs(){
     allasm = NULL;
@@ -377,7 +378,7 @@ static void assemble_itype(const Instr *instr, uint8_t funct3, uint8_t opcode) {
     val = 0;
   }
   su32((val & 0xfff) << 20 | rs1 << 15 | funct3 << 12 | rd << 7 | opcode);
-  if((instr->variant == 1) && insrange(32, val)) {
+  if(is64 && (instr->variant == 1) && !insrange(32, val)) {
 	imm32u = val>>32;
 	if((imm32u & 0x800) != 0) imm32u += 0x1000;
 	su32((imm32u & 0xfffff000) | 31 << 7 | 0x37);        // lui x31, val
@@ -1199,7 +1200,7 @@ static void outelf(void) {
 
 static void usage(char *argv0) {
   fprintf(stderr, "minias - a mini assembler.");
-  fprintf(stderr, "usage: %s [-o out] [input]\n", argv0);
+  fprintf(stderr, "usage: %s [-o out] [-m64] [input]\n", argv0);
   exit(2);
 }
 
@@ -1217,6 +1218,10 @@ static void parseargs(int argc, char *argv[]) {
       case 'h':
         usage(argv0);
         break;
+      case 'm':
+        if(strncmp(++a, "64", 2) == 0)
+            is64 = 1;
+        goto cont;
       case 'o':
         if (argv[1] == NULL)
           usage(argv0);
@@ -1228,6 +1233,7 @@ static void parseargs(int argc, char *argv[]) {
         usage(argv0);
       }
     }
+    cont:
   }
 
   if (argv[0]) {
